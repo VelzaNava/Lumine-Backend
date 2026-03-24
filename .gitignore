@@ -1,0 +1,16 @@
+## .NET / ASP.NET Core
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+## Sensitive config — never commit real keys
+appsettings.json
+appsettings.Development.json
+
+## OS
+.DS_Store
+Thumbs.db
