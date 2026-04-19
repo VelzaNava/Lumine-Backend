@@ -10,12 +10,14 @@ namespace Lumine.Backend.Controllers
     {
         private readonly JewelryService _jewelryService;
         private readonly ILogger<JewelryController> _logger;
+        private readonly IConfiguration _configuration;
 
-        // i-inject yung jewelry service at logger
-        public JewelryController(JewelryService jewelryService, ILogger<JewelryController> logger)
+        // i-inject yung jewelry service, logger, at config
+        public JewelryController(JewelryService jewelryService, ILogger<JewelryController> logger, IConfiguration configuration)
         {
             _jewelryService = jewelryService;
             _logger = logger;
+            _configuration = configuration;
         }
 
         // kunin lahat ng jewelry — ipapakita sa catalog ng app
@@ -105,6 +107,61 @@ namespace Lumine.Backend.Controllers
             {
                 _logger.LogError($"Error deleting jewelry {id}: {ex.Message}");
                 return StatusCode(500, new { error = "Failed to delete jewelry", details = ex.Message });
+            }
+        }
+
+        // i-upload yung jewelry image sa Supabase storage tapos i-return yung public URL
+        [HttpPost("upload-image")]
+        public async Task<IActionResult> UploadJewelryImage(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { error = "No file provided" });
+
+            if (file.Length > 5 * 1024 * 1024)
+                return BadRequest(new { error = "File too large. Max 5MB." });
+
+            try
+            {
+                var supabaseUrl = _configuration["Supabase:Url"]!;
+                var serviceKey  = _configuration["Supabase:Key"]!;
+
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+
+                var contentType = file.ContentType switch
+                {
+                    "image/jpeg" => "image/jpeg",
+                    "image/png"  => "image/png",
+                    "image/webp" => "image/webp",
+                    _            => "image/jpeg"
+                };
+
+                using var httpClient = new HttpClient();
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {serviceKey}");
+                httpClient.DefaultRequestHeaders.Add("apikey", serviceKey);
+
+                var fileName  = $"jewelry_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.jpg";
+                var uploadUrl = $"{supabaseUrl}/storage/v1/object/jewelry/{fileName}";
+
+                var content = new ByteArrayContent(bytes);
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+
+                var uploadResponse = await httpClient.PutAsync(uploadUrl, content);
+                if (!uploadResponse.IsSuccessStatusCode)
+                {
+                    var err = await uploadResponse.Content.ReadAsStringAsync();
+                    _logger.LogError("Jewelry image upload failed: {Error}", err);
+                    return BadRequest(new { error = "Upload failed", details = err });
+                }
+
+                var publicUrl = $"{supabaseUrl}/storage/v1/object/public/jewelry/{fileName}";
+                return Ok(new { imageUrl = publicUrl });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("UploadJewelryImage error: {Message}", ex.Message);
+                return BadRequest(new { error = ex.Message });
             }
         }
     }

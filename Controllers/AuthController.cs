@@ -141,8 +141,40 @@ namespace Lumine.Backend.Controllers
             try
             {
                 var supabaseUrl = _configuration["Supabase:Url"]!;
-                // gamitin anon key, hindi service_role — baka hindi ma-store yung OTP token pag service_role
+                var serviceKey  = _configuration["Supabase:Key"]!;
                 var anonKey     = _configuration["Supabase:AnonKey"]!;
+
+                // i-check muna kung may confirmed account na para sa email na ito
+                // para hindi ma-override yung existing password ng registered user
+                using var checkHttp = new System.Net.Http.HttpClient();
+                checkHttp.DefaultRequestHeaders.Add("apikey", serviceKey);
+                checkHttp.DefaultRequestHeaders.Add("Authorization", $"Bearer {serviceKey}");
+
+                var checkResp = await checkHttp.GetAsync(
+                    $"{supabaseUrl}/auth/v1/admin/users?email={Uri.EscapeDataString(request.Email)}&per_page=5"
+                );
+
+                if (checkResp.IsSuccessStatusCode)
+                {
+                    var checkJson = await checkResp.Content.ReadAsStringAsync();
+                    using var checkDoc = System.Text.Json.JsonDocument.Parse(checkJson);
+
+                    if (checkDoc.RootElement.TryGetProperty("users", out var usersEl))
+                    {
+                        foreach (var user in usersEl.EnumerateArray())
+                        {
+                            var userEmail    = user.TryGetProperty("email", out var eEl) ? eEl.GetString() : null;
+                            var confirmedAt  = user.TryGetProperty("email_confirmed_at", out var cEl) ? cEl.GetString() : null;
+
+                            if (string.Equals(userEmail, request.Email, StringComparison.OrdinalIgnoreCase)
+                                && !string.IsNullOrEmpty(confirmedAt))
+                            {
+                                _logger.LogWarning("OTP blocked — confirmed account already exists: {Email}", request.Email);
+                                return Conflict(new { error = "An account with this email already exists. Please log in instead." });
+                            }
+                        }
+                    }
+                }
 
                 using var http = new System.Net.Http.HttpClient();
                 http.DefaultRequestHeaders.Add("apikey", anonKey);
@@ -185,8 +217,8 @@ namespace Lumine.Backend.Controllers
                 using var http = new System.Net.Http.HttpClient();
                 http.DefaultRequestHeaders.Add("apikey", serviceKey);
 
-                // i-verify yung OTP directly — type "email" ang tama para sa /auth/v1/otp tokens
-                var verifyPayload = new { type = "email", token = request.Token, email = request.Email };
+                // i-verify yung OTP — type "magiclink" maps to recovery_token na ginagamit ng /auth/v1/otp
+                var verifyPayload = new { type = "magiclink", token = request.Token, email = request.Email };
                 var verifyResp = await http.PostAsJsonAsync($"{supabaseUrl}/auth/v1/verify", verifyPayload);
 
                 if (!verifyResp.IsSuccessStatusCode)
@@ -201,8 +233,8 @@ namespace Lumine.Backend.Controllers
                 using var sessionDoc = System.Text.Json.JsonDocument.Parse(sessionJson);
                 var root = sessionDoc.RootElement;
 
-                var accessToken  = root.TryGetProperty("access_token",  out var at)  ? at.GetString()  : null;
-                var refreshToken = root.TryGetProperty("refresh_token",  out var rt)  ? rt.GetString()  : "";
+                var accessToken  = root.TryGetProperty("access_token",  out var at) ? at.GetString()  : null;
+                var refreshToken = root.TryGetProperty("refresh_token",  out var rt) ? rt.GetString()  : "";
                 var userId       = root.TryGetProperty("user", out var userEl)
                     ? (userEl.TryGetProperty("id", out var idEl) ? idEl.GetString() : "")
                     : "";
@@ -210,12 +242,22 @@ namespace Lumine.Backend.Controllers
                 if (string.IsNullOrEmpty(accessToken))
                     return Unauthorized(new { error = "Invalid or expired OTP code" });
 
-                // i-update yung password sa pinili ng user — gamit yung access token na nakuha
-                http.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+                // i-update yung password gamit yung user's own access token — mas tama kaysa admin PATCH
+                // kasi yung accessToken galing sa verify response ay valid session ng user
+                using var userPwdHttp = new System.Net.Http.HttpClient();
+                userPwdHttp.DefaultRequestHeaders.Add("apikey", serviceKey);
+                userPwdHttp.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
 
                 var pwdPayload = System.Text.Json.JsonSerializer.Serialize(new { password = request.Password });
                 var pwdContent = new System.Net.Http.StringContent(pwdPayload, System.Text.Encoding.UTF8, "application/json");
-                await http.PutAsync($"{supabaseUrl}/auth/v1/user", pwdContent);
+                var pwdResp    = await userPwdHttp.PutAsync($"{supabaseUrl}/auth/v1/user", pwdContent);
+
+                if (!pwdResp.IsSuccessStatusCode)
+                {
+                    var pwdBody = await pwdResp.Content.ReadAsStringAsync();
+                    _logger.LogError("Password update failed for {Email}: {Status} {Body}", request.Email, (int)pwdResp.StatusCode, pwdBody);
+                    return BadRequest(new { error = "Account verified but password could not be set. Please try again." });
+                }
 
                 var isAdmin = CheckIsAdmin(request.Email);
                 _logger.LogInformation("User registered via OTP: {Email}", request.Email);

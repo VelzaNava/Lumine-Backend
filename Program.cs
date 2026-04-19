@@ -48,10 +48,9 @@ await supabaseService.InitializeAsync();
 app.UseSwagger(options => options.RouteTemplate = "openapi/{documentName}.json");
 app.MapScalarApiReference(options =>
 {
-    options.Title           = "Lumine API";
-    options.Theme           = ScalarTheme.DeepSpace;
+    options.Title             = "Lumine API";
+    options.Theme             = ScalarTheme.DeepSpace;
     options.DefaultHttpClient = new(ScalarTarget.CSharp, ScalarClient.HttpClient);
-    options.AddPreferredSecuritySchemes("Bearer");
 });
 
 // i-enable yung CORS policy tapos i-map lahat ng controllers

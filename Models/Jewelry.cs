@@ -47,8 +47,16 @@ namespace Lumine.Backend.Models
         [Column("model_url")]
         public string? ModelUrl { get; set; }
 
+        // Product description
+        [Column("description")]
+        public string? Description { get; set; }
+
         // Whether item is visible in catalog
         [Column("is_available")]
         public bool IsAvailable { get; set; } = true;
+
+        // Whether AR try-on is enabled for this item
+        [Column("is_ar_enabled")]
+        public bool IsArEnabled { get; set; } = false;
     }
 }
