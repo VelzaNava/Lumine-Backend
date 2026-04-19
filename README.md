@@ -121,24 +121,10 @@ create table public.jewelry (
 
 ## Project Structure
 
-```
-Lumine.Backend/
-├── Controllers/
-│   ├── AuthController.cs       # Register, login, OTP flow
-│   ├── ProfileController.cs    # Profile CRUD, avatar upload
-│   ├── AdminController.cs      # User management
-│   ├── JewelryController.cs    # Jewelry catalog CRUD
-│   └── EvaluationController.cs # AR try-on ratings
-├── Models/
-│   ├── AuthModels.cs
-│   ├── ProfileModels.cs
-│   └── EvaluationModels.cs
-├── Services/
-│   ├── SupabaseService.cs      # Supabase client singleton
-│   └── JewelryService.cs       # Jewelry business logic
-├── appsettings.example.json    # Config template (safe to commit)
-└── appsettings.json            # Real config (gitignored)
-```
+- `Controllers/` — route handlers for auth, profile, admin, jewelry, and evaluation
+- `Models/` — request/response DTOs
+- `Services/` — Supabase client and jewelry logic
+- `appsettings.example.json` — copy this to `appsettings.json` and fill in your Supabase keys
 
 ---
 
