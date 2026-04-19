@@ -19,7 +19,8 @@ ASP.NET Core REST API backend for the **Lumine AR Jewelry Try-On App** — a the
 |---|---|
 | `api/auth` | Register, login, OTP email verification |
 | `api/profile` | View/edit user profile, avatar upload |
-| `api/jewelry` | Full CRUD for jewelry catalog |
+| `api/jewelry` | Full CRUD for jewelry catalog, image upload to Supabase Storage |
+| `api/jewelry/upload-image` | Accepts multipart image from Android, uploads to Supabase `jewelry` bucket, returns public URL |
 | `api/admin` | User management, view favorites |
 | `api/evaluation` | Submit AR try-on ratings (1–5 stars) |
 
@@ -103,11 +104,16 @@ create table public.evaluations (
 -- Jewelry
 create table public.jewelry (
   id uuid primary key default gen_random_uuid(),
+  created_at timestamptz default now(),
   name text,
-  category text,
+  type text,
+  material text,
   price numeric,
   description text,
-  image_url text
+  image_url text,
+  model_url text,
+  is_available boolean default true,
+  is_ar_enabled boolean default false
 );
 ```
 
