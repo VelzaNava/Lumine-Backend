@@ -1,0 +1,9 @@
+# Caddy reverse proxy for the Lumine API.
+# Replace api.example.com with the domain whose DNS A record points at this server.
+# Caddy obtains and renews the HTTPS certificate automatically.
+# Install:  sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+api.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:5111
+}

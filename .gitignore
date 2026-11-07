@@ -1,15 +1,19 @@
 ## .NET / ASP.NET Core
 bin/
 obj/
+build/
+publish/
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
 .vs/
+TestResults/
 
-## Sensitive config — never commit real keys
+## Sensitive config — never commit real keys (appsettings.example.json is the template)
 appsettings.json
-appsettings.Development.json
+appsettings.*.json
+!appsettings.example.json
 
 ## OS
 .DS_Store

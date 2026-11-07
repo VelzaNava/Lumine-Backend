@@ -1,6 +1,36 @@
-@Lumine.Backend_HostAddress = http://localhost:5111
+# Quick manual checks (VS Code REST Client / Visual Studio / Rider).
+# Sign in first, then paste the accessToken into @token.
 
-GET {{Lumine.Backend_HostAddress}}/weatherforecast/
-Accept: application/json
+@host = http://localhost:5111
+@token = paste-access-token-here
 
-###
+### Health
+GET {{host}}/health
+
+### Catalog (public)
+GET {{host}}/api/jewelry
+
+### Sign in
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "you@example.com",
+  "password": "your-password"
+}
+
+### Refresh an expired session
+POST {{host}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "paste-refresh-token-here"
+}
+
+### Admin: list users
+GET {{host}}/api/admin/users
+Authorization: Bearer {{token}}
+
+### Admin: rating summary
+GET {{host}}/api/evaluation/summary
+Authorization: Bearer {{token}}
