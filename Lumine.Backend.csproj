@@ -1,20 +1,38 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Lumine.Backend</RootNamespace>
+    <!-- No culture-specific logic here, and invariant mode removes the ICU
+         dependency on the Linux server. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- XML doc comments feed the OpenAPI document shown in the API docs. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <!-- The test project lives inside this folder; keep it out of the app build. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="9.0.0" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.13.13" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
-    <PackageReference Include="supabase-csharp" Version="0.16.0" />
-    <PackageReference Include="postgrest-csharp" Version="3.5.1" />
-    <PackageReference Include="gotrue-csharp" Version="4.2.6" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <Compile Remove="Lumine.Backend.Tests/**" />
+    <Content Remove="Lumine.Backend.Tests/**" />
+    <None Remove="Lumine.Backend.Tests/**" />
+    <EmbeddedResource Remove="Lumine.Backend.Tests/**" />
+  </ItemGroup>
+
+  <!-- Only the real appsettings.json belongs on the server. -->
+  <ItemGroup>
+    <Content Update="appsettings.example.json;appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lumine.Backend.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.17.10" />
   </ItemGroup>
 
 </Project>

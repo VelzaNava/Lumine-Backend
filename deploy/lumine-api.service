@@ -1,0 +1,33 @@
+# systemd unit for the Lumine API.
+# Install:  sudo cp lumine-api.service /etc/systemd/system/
+#           sudo systemctl daemon-reload && sudo systemctl enable --now lumine-api
+# Logs:     journalctl -u lumine-api -f
+
+[Unit]
+Description=Lumine API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/lumine-api
+ExecStart=/opt/lumine-api/Lumine.Backend
+User=lumine
+Group=lumine
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+SyslogIdentifier=lumine-api
+
+# Listen on localhost only; Caddy terminates HTTPS and proxies to this port.
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5111
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_NOLOGO=1
+
+# Hardening: the API never needs to write to the filesystem or gain privileges.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

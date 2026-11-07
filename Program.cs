@@ -1,61 +1,113 @@
-using Lumine.Backend.Services;
+using Lumine.Backend.Errors;
+using Lumine.Backend.Hosting;
+using Microsoft.AspNetCore.HttpOverrides;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// i-register yung controllers — JSON serialization na may ReferenceLoopHandling para safe
-builder.Services.AddControllers()
-    .AddNewtonsoftJson(options =>
-    {
-        options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
-    });
-
-// i-register yung services sa DI container — singleton yung Supabase, scoped yung Jewelry
-builder.Services.AddSingleton<SupabaseService>();
-builder.Services.AddScoped<JewelryService>();
-builder.Services.AddEndpointsApiExplorer();
-
-// i-setup yung Swagger docs — may title at version para maayos sa Scalar UI
-builder.Services.AddSwaggerGen(options =>
+// Port 5111 on every interface by default - what the app and ngrok expect in
+// development. A host that sets ASPNETCORE_URLS or "Urls" wins; the production
+// service binds to localhost only, behind the HTTPS reverse proxy.
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
 {
-    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
-    {
-        Title       = "Lumine API",
-        Version     = "v1",
-        Description = "Backend API for the Lumine AR Jewelry Try-On App"
-    });
+    builder.WebHost.UseUrls("http://0.0.0.0:5111");
+}
+
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.SingleLine = true;
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
 });
 
-// i-configure yung CORS — allow lahat para hindi mag-block yung Android app requests
-builder.Services.AddCors(options =>
+// One line per outgoing Supabase call is noise; failures are still logged by the clients.
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+
+builder.Services
+    .AddSupabase(builder.Configuration)
+    .AddLumineSecurity()
+    .AddLumineServices();
+
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options => options.AllowInputFormatterExceptionMessages = false)
+    .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = ErrorResponse.FromInvalidModelState);
+
+// Only explicit [Required] fields are mandatory; optional text may legitimately be empty.
+builder.Services.Configure<Microsoft.AspNetCore.Mvc.MvcOptions>(options =>
+    options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true);
+
+builder.Services.AddHostedService<DatabaseSchemaCheck>();
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+builder.Services.AddHealthChecks();
+
+// Caddy (production) and ngrok (development) proxy from localhost, which is
+// trusted by default, so logs and rate limits see the real client address.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto);
+
+var apiDocsEnabled = builder.Configuration.GetValue("ApiDocs:Enabled", builder.Environment.IsDevelopment());
+if (apiDocsEnabled)
 {
-    options.AddPolicy("AllowAndroidApp",
-        policy =>
+    builder.Services.AddOpenApi(options =>
+    {
+        options.AddDocumentTransformer((document, _, _) =>
         {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
+            document.Info.Title = "Lumine API";
+            document.Info.Version = "v1";
+            document.Info.Description = "Backend for the Lumine AR jewelry try-on app.";
+            return Task.CompletedTask;
         });
-});
+        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    });
+}
+
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+if (corsOrigins.Length > 0)
+{
+    builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+        policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
+}
 
 var app = builder.Build();
 
-// i-initialize yung Supabase connection bago mag-accept ng requests
-var supabaseService = app.Services.GetRequiredService<SupabaseService>();
-await supabaseService.InitializeAsync();
+app.UseForwardedHeaders();
+app.UseMiddleware<RequestTimingMiddleware>();
+app.UseExceptionHandler();
 
-// i-setup yung Scalar API docs UI — DeepSpace theme, CSharp HttpClient ang default
-app.UseSwagger(options => options.RouteTemplate = "openapi/{documentName}.json");
-app.MapScalarApiReference(options =>
+if (apiDocsEnabled)
 {
-    options.Title             = "Lumine API";
-    options.Theme             = ScalarTheme.DeepSpace;
-    options.DefaultHttpClient = new(ScalarTarget.CSharp, ScalarClient.HttpClient);
-});
+    app.MapOpenApi().AllowAnonymous();
+    app.MapScalarApiReference(options =>
+    {
+        options.Title = "Lumine API";
+        options.Theme = ScalarTheme.DeepSpace;
+    }).AllowAnonymous();
+}
 
-// i-enable yung CORS policy tapos i-map lahat ng controllers
-app.UseCors("AllowAndroidApp");
+if (corsOrigins.Length > 0)
+{
+    app.UseCors();
+}
+
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapControllers();
+app.MapHealthChecks("/health").AllowAnonymous();
 
-// i-run sa port 5111 — accessible sa lahat ng interfaces para sa Android emulator/device
-app.Run("http://0.0.0.0:5111");
+// Public pages that the Google Play listing links to.
+foreach (var page in new[] { "privacy", "delete-account" })
+{
+    var file = Path.Combine(app.Environment.WebRootPath, page + ".html");
+    app.MapGet("/" + page, () => Results.File(file, "text/html; charset=utf-8"))
+        .AllowAnonymous()
+        .ExcludeFromDescription();
+}
+
+app.Run();
+
+/// <summary>Application entry point; public so the integration tests can host it.</summary>
+public partial class Program;
